@@ -211,10 +211,10 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    override fun onNewIntent(intent: Intent?) {
+    override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // Handle new intents when activity is already running
-        intent?.let { handleIncomingIntent(it) }
+        handleIncomingIntent(intent)
     }
 
     private fun handleIncomingIntent(intent: Intent?) {

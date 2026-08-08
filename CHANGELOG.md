@@ -1,3 +1,8 @@
+16.0
+====
+
+Maintenance release, update dependencies.
+
 15.0
 ====
 

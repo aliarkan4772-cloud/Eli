@@ -1,19 +1,18 @@
 plugins {
     alias(libs.plugins.androidApplication)
-    alias(libs.plugins.kotlinAndroid)
     alias(libs.plugins.kotlinCompose)
 }
 
 android {
     namespace = "alzwded.openaudiobookify"
-    compileSdk = 35
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "alzwded.openaudiobookify"
         minSdk = 24
-        targetSdk = 35
-        versionCode = 15
-        versionName = "15.0"
+        targetSdk = 37
+        versionCode = 16
+        versionName = "16.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -83,11 +82,11 @@ dependencies {
     implementation(libs.androidx.compose.material.icons.core)
     implementation(libs.androidx.compose.material.icons.extended)
     implementation(libs.androidx.documentfile)
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
-    implementation("org.jsoup:jsoup:1.17.2")
-    implementation("androidx.media3:media3-transformer:1.9.3")
-    implementation("androidx.media3:media3-common:1.9.3")
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.7.0")
+    implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.jsoup)
+    implementation(libs.androidx.media3.transformer)
+    implementation(libs.androidx.media3.common)
+    implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.material3)
 
     testImplementation(libs.junit)
