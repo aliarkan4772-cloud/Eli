@@ -78,8 +78,6 @@ data class Book(val name: String, val uri: Uri)
 // --- ViewModel to Bridge Service & Compose ---
 @UnstableApi
 class MainViewModel(application: Application) : AndroidViewModel(application) {
-    private var audiobookService: AudiobookService? = null
-
     private val _isServiceActive = MutableStateFlow(false)
     val isServiceActive = _isServiceActive.asStateFlow()
 
@@ -95,23 +93,22 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
             val binder = service as AudiobookService.LocalBinder
-            audiobookService = binder.getService()
+            val serviceInstance = binder.getService()
 
             // Listen to the service's state flow
             viewModelScope.launch {
-                audiobookService?.isProcessing?.collect { processing ->
+                serviceInstance.isProcessing.collect { processing ->
                     _isServiceActive.value = processing
                 }
             }
             viewModelScope.launch {
-                audiobookService?.queueState?.collect { state ->
+                serviceInstance.queueState.collect { state ->
                     _queueState.value = state
                 }
             }
         }
 
         override fun onServiceDisconnected(name: ComponentName?) {
-            audiobookService = null
             _isServiceActive.value = false
         }
     }
@@ -187,7 +184,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     override fun onCleared() {
-        super.onCleared()
         getApplication<Application>().unbindService(connection)
     }
 }
@@ -213,12 +209,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        setIntent(intent)
         // Handle new intents when activity is already running
         handleIncomingIntent(intent)
     }
 
-    private fun handleIncomingIntent(intent: Intent?) {
-        when (intent?.action) {
+    private fun handleIncomingIntent(intent: Intent) {
+        when (intent.action) {
             Intent.ACTION_SEND -> {
                 handleSingleShare(intent)
             }
@@ -264,6 +261,14 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun OpenAudioBookifyApp(viewModel: MainViewModel) {
     val context = LocalContext.current
+
+    // Pre-fetch strings to avoid LocalContextGetResourceValueCall errors
+    val notificationPermissionRequiredText = stringResource(R.string.notification_permission_required)
+    val writeExternalPermissionRequiredText = stringResource(R.string.write_external_permission_required)
+    val processingStartedText = stringResource(R.string.processing_started)
+    val errorMissingDocumentsUiText = stringResource(R.string.error_missing_documentsui)
+    val errorNoBooksAddedText = stringResource(R.string.error_no_books_added)
+    val errorUnknownText = stringResource(R.string.error_unknown)
 
     // Track the service state from the ViewModel
     val isProcessing by viewModel.isServiceActive.collectAsStateWithLifecycle()
@@ -315,7 +320,7 @@ fun OpenAudioBookifyApp(viewModel: MainViewModel) {
         onResult = { isGranted ->
             hasNotificationPermission = isGranted
             if (!isGranted) {
-                Toast.makeText(context, context.getString(R.string.notification_permission_required), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, notificationPermissionRequiredText, Toast.LENGTH_SHORT).show()
             }
         }
     )
@@ -325,7 +330,7 @@ fun OpenAudioBookifyApp(viewModel: MainViewModel) {
         onResult = { isGranted ->
             hasWriteExternalPermission = isGranted
             if (!isGranted) {
-                Toast.makeText(context, context.getString(R.string.write_external_permission_required), Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, writeExternalPermissionRequiredText, Toast.LENGTH_SHORT).show()
             }
         }
     )
@@ -378,7 +383,7 @@ fun OpenAudioBookifyApp(viewModel: MainViewModel) {
         }
 
         ContextCompat.startForegroundService(context, intent)
-        Toast.makeText(context, context.getString(R.string.processing_started), Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, processingStartedText, Toast.LENGTH_SHORT).show()
     }
 
     Scaffold(
@@ -418,7 +423,7 @@ fun OpenAudioBookifyApp(viewModel: MainViewModel) {
                     dirPickerLauncher.launch(null)
                 } catch (e: android.content.ActivityNotFoundException) {
                     Log.e(TAG, "DocumentsUI missing")
-                    Toast.makeText(context, context.getString(R.string.error_missing_documentsui), Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, errorMissingDocumentsUiText, Toast.LENGTH_LONG).show()
                 }
             },
             onClearOutputFolderClick = { viewModel.clearOutputUri() },
@@ -433,8 +438,8 @@ fun OpenAudioBookifyApp(viewModel: MainViewModel) {
                     }
                 } else {
                     val message = when {
-                        selectedBooks.isEmpty() -> context.getString(R.string.error_no_books_added)
-                        else -> context.getString(R.string.error_unknown)
+                        selectedBooks.isEmpty() -> errorNoBooksAddedText
+                        else -> errorUnknownText
                     }
                     Toast.makeText(context, message, Toast.LENGTH_SHORT).show()
                 }

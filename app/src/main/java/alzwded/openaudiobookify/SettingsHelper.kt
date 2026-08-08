@@ -27,32 +27,33 @@ package alzwded.openaudiobookify
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.core.content.edit
 
 class SettingsHelper(context: Context) {
     private val prefs: SharedPreferences = context.getSharedPreferences("openaudiobookify_settings", Context.MODE_PRIVATE)
 
     var ttsEngine: String?
         get() = prefs.getString("tts_engine", null)
-        set(value) = prefs.edit().putString("tts_engine", value).apply()
+        set(value) = prefs.edit { putString("tts_engine", value) }
 
     // TODO dubious, should remove, selecting a voice should be enough
     var ttsLanguage: String?
         get() = prefs.getString("tts_language", null)
-        set(value) = prefs.edit().putString("tts_language", value).apply()
+        set(value) = prefs.edit { putString("tts_language", value) }
 
     var ttsVoice: String?
         get() = prefs.getString("tts_voice", null)
-        set(value) = prefs.edit().putString("tts_voice", value).apply()
+        set(value) = prefs.edit { putString("tts_voice", value) }
 
     var speechRate: Float
         get() = prefs.getFloat("speech_rate", 1.0f)
-        set(value) = prefs.edit().putFloat("speech_rate", value).apply()
+        set(value) = prefs.edit { putFloat("speech_rate", value) }
 
     var pitch: Float
         get() = prefs.getFloat("pitch", 1.0f)
-        set(value) = prefs.edit().putFloat("pitch", value).apply()
+        set(value) = prefs.edit { putFloat("pitch", value) }
 
     var encoderBitrate: Int
         get() = prefs.getInt("encoder_bitrate", 48000)
-        set(value) = prefs.edit().putInt("encoder_bitrate", value).apply()
+        set(value) = prefs.edit { putInt("encoder_bitrate", value) }
 }

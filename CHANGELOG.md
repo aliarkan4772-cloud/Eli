@@ -1,7 +1,7 @@
 16.0
 ====
 
-Maintenance release, update dependencies.
+Maintenance release, update dependencies, fix linter warnings.
 
 15.0
 ====
