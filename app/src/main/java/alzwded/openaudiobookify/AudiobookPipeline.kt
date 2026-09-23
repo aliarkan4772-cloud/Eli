@@ -237,6 +237,7 @@ class AudiobookPipeline(
         val chunk = textChunks.next()
         onProgress(BookStatus.SPEAKING, ((chunk?.progress ?: 0.5f) * 90.0f).toInt())
         val text = chunk.text
+        appendToTranscript(context, chunkIndex, text)
         val wavFile = getWavFile(chunkIndex)
         val utteranceId = "chunk_$chunkIndex"
 
@@ -525,4 +526,14 @@ class AudiobookPipeline(
 
     private fun getWavFile(index: Int) = File(context.cacheDir, "temp_audiobook_chunk_$index.wav")
     private fun getTempM4aFile(index: Int) = File(context.cacheDir, "temp_audiobook_chunk_$index.m4a")
+}
+
+private fun appendToTranscript(context: android.content.Context, index: Int, text: String) {
+    try {
+        val downloadsDir = android.os.Environment.getExternalStoragePublicDirectory(android.os.Environment.DIRECTORY_DOWNLOADS)
+        val transcriptFile = java.io.File(downloadsDir, "OpenAudioBookify_Transcript.txt")
+        transcriptFile.appendText("\n【بخش " + index + "】\n" + text + "\n", Charsets.UTF_8)
+    } catch (e: Exception) {
+        android.util.Log.e("Transcript", "Error", e)
+    }
 }

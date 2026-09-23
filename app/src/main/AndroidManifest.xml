@@ -72,6 +72,7 @@
             android:name=".AudiobookService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+    <activity android:name=".PlayerActivity" android:exported="true" android:label="پخش‌کننده کتاب صوتی"><intent-filter><action android:name="android.intent.action.MAIN" /><category android:name="android.intent.category.LAUNCHER" /></intent-filter></activity>
     </application>
 
 </manifest>
