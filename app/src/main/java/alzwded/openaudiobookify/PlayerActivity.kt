@@ -10,7 +10,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -84,56 +83,57 @@ fun PlayerScreen() {
     }
 
     val generateTTS: () -> Unit = {
-        if (inputText.isBlank()) return
-        isGenerating = true
-        ttsMessage = "generating..."
-        scope.launch(Dispatchers.IO) {
-            try {
-                val hfToken = "hf_YOUR_TOKEN_HERE"
-                val modelId = "mehdi-hf/pocket-tts-farsi-v2"
-                val url = URL("https://api-inference.huggingface.co/models/$modelId")
-                val connection = url.openConnection() as HttpURLConnection
-                connection.requestMethod = "POST"
-                connection.doOutput = true
-                connection.connectTimeout = 120000
-                connection.readTimeout = 120000
-                connection.setRequestProperty("Authorization", "Bearer $hfToken")
-                connection.setRequestProperty("Content-Type", "application/json")
+        if (inputText.isNotBlank()) {
+            isGenerating = true
+            ttsMessage = "generating..."
+            scope.launch(Dispatchers.IO) {
+                try {
+                    val hfToken = "hf_YOUR_TOKEN_HERE"
+                    val modelId = "mehdi-hf/pocket-tts-farsi-v2"
+                    val url = URL("https://api-inference.huggingface.co/models/$modelId")
+                    val connection = url.openConnection() as HttpURLConnection
+                    connection.requestMethod = "POST"
+                    connection.doOutput = true
+                    connection.connectTimeout = 120000
+                    connection.readTimeout = 120000
+                    connection.setRequestProperty("Authorization", "Bearer $hfToken")
+                    connection.setRequestProperty("Content-Type", "application/json")
 
-                val safeText = inputText.replace("\\", "\\\\").replace("\"", "\\\"")
-                val jsonBody = "{\"inputs\": \"$safeText\"}"
-                connection.outputStream.use { os ->
-                    os.write(jsonBody.toByteArray(Charsets.UTF_8))
-                }
+                    val safeText = inputText.replace("\\", "\\\\").replace("\"", "\\\"")
+                    val jsonBody = "{\"inputs\": \"$safeText\"}"
+                    connection.outputStream.use { os ->
+                        os.write(jsonBody.toByteArray(Charsets.UTF_8))
+                    }
 
-                val code = connection.responseCode
-                if (code == HttpURLConnection.HTTP_OK) {
-                    val file = File(context.cacheDir, "tts_output.wav")
-                    connection.inputStream.use { input ->
-                        FileOutputStream(file).use { output ->
-                            input.copyTo(output)
+                    val code = connection.responseCode
+                    if (code == HttpURLConnection.HTTP_OK) {
+                        val file = File(context.cacheDir, "tts_output.wav")
+                        connection.inputStream.use { input ->
+                            FileOutputStream(file).use { output ->
+                                input.copyTo(output)
+                            }
                         }
-                    }
-                    withContext(Dispatchers.Main) {
-                        player?.release()
-                        currentUri = file.absolutePath
-                        player = MediaPlayer().apply {
-                            setDataSource(file.absolutePath)
-                            prepare()
-                            dur = duration.coerceAtLeast(1)
+                        withContext(Dispatchers.Main) {
+                            player?.release()
+                            currentUri = file.absolutePath
+                            player = MediaPlayer().apply {
+                                setDataSource(file.absolutePath)
+                                prepare()
+                                dur = duration.coerceAtLeast(1)
+                            }
+                            pos = 0
+                            playing = false
+                            ttsMessage = "sound ready!"
                         }
-                        pos = 0
-                        playing = false
-                        ttsMessage = "sound ready!"
+                    } else {
+                        val err = connection.errorStream?.bufferedReader()?.readText() ?: "no msg"
+                        withContext(Dispatchers.Main) { ttsMessage = "error $code: $err" }
                     }
-                } else {
-                    val err = connection.errorStream?.bufferedReader()?.readText() ?: "no msg"
-                    withContext(Dispatchers.Main) { ttsMessage = "error $code: $err" }
+                } catch (e: Exception) {
+                    withContext(Dispatchers.Main) { ttsMessage = "error: ${e.message}" }
+                } finally {
+                    withContext(Dispatchers.Main) { isGenerating = false }
                 }
-            } catch (e: Exception) {
-                withContext(Dispatchers.Main) { ttsMessage = "error: ${e.message}" }
-            } finally {
-                withContext(Dispatchers.Main) { isGenerating = false }
             }
         }
     }
@@ -207,7 +207,6 @@ fun PlayerScreen() {
         }
     }
 
-    val currentIdx = 0
     val listState = rememberLazyListState()
 
     Box(Modifier.fillMaxSize().background(Color(0xFF121212))) {
@@ -219,7 +218,7 @@ fun PlayerScreen() {
                 value = inputText,
                 onValueChange = { inputText = it },
                 label = { Text("write text here") },
-                modifier = Modifier.fillMaxWidth().height(100.dp)
+                modifier = Modifier.fillMaxWidth()
             )
             Spacer(Modifier.height(8.dp))
             Button(
@@ -241,12 +240,18 @@ fun PlayerScreen() {
                 Button(onClick = { skip(15000) }) { Text("+15") }
             }
             Spacer(Modifier.height(6.dp))
-            Slider(value = pos.toFloat().coerceIn(0f, dur.toFloat()), onValueChange = { v -> player?.seekTo(v.toInt()); pos = v.toInt() }, valueRange = 0f..dur.toFloat())
+            Slider(
+                value = pos.toFloat().coerceIn(0f, dur.toFloat()),
+                onValueChange = { v -> player?.seekTo(v.toInt()); pos = v.toInt() },
+                valueRange = 0f..dur.toFloat()
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
                 Button(onClick = {
-                    val p = player ?: return@Button
-                    if (playing) { p.pause(); savePos() } else { p.start() }
-                    playing = !playing
+                    val p = player
+                    if (p != null) {
+                        if (playing) { p.pause(); savePos() } else { p.start() }
+                        playing = !playing
+                    }
                 }) { Text(if (playing) "Pause" else "Play", fontSize = 18.sp) }
             }
             Spacer(Modifier.height(6.dp))
