@@ -24,6 +24,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -32,6 +33,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -40,7 +42,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.io.File
+import java.io.FileOutputStream
+import java.net.HttpURLConnection
+import java.net.URL
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class PlayerActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -52,7 +60,9 @@ class PlayerActivity : ComponentActivity() {
 @Composable
 fun PlayerScreen() {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val prefs = remember { context.getSharedPreferences("player", 0) }
+
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
     var currentUri by remember { mutableStateOf<String?>(null) }
     var playing by remember { mutableStateOf(false) }
@@ -60,6 +70,11 @@ fun PlayerScreen() {
     var dur by remember { mutableStateOf(1) }
     var speed by remember { mutableStateOf(1.0f) }
     var sleepLeft by remember { mutableStateOf(0) }
+
+    var inputText by remember { mutableStateOf("") }
+    var isGenerating by remember { mutableStateOf(false) }
+    var ttsMessage by remember { mutableStateOf("") }
+
     val savePos: () -> Unit = {
         val p = player
         val u = currentUri
@@ -67,6 +82,62 @@ fun PlayerScreen() {
             prefs.edit().putString("pos_" + u, p.currentPosition.toString()).apply()
         }
     }
+
+    val generateTTS: () -> Unit = {
+        if (inputText.isBlank()) return
+        isGenerating = true
+        ttsMessage = "⏳ در حال ساخت صدا (ممکنه ۱-۲ دقیقه طول بکشه)..."
+        scope.launch(Dispatchers.IO) {
+            try {
+                // ️ کلید hf_ خودت رو اینجا بذار
+                val hfToken = "hf_YOUR_TOKEN_HERE"
+                val modelId = "mehdi-hf/pocket-tts-farsi-v2"
+                val url = URL("https://api-inference.huggingface.co/models/$modelId")
+                val connection = url.openConnection() as HttpURLConnection
+                connection.requestMethod = "POST"
+                connection.doOutput = true
+                connection.connectTimeout = 120000
+                connection.readTimeout = 120000
+                connection.setRequestProperty("Authorization", "Bearer $hfToken")
+                connection.setRequestProperty("Content-Type", "application/json")
+
+                val jsonBody = """{"inputs": "${inputText.replace("\"", "\\\"")}"}"""
+                connection.outputStream.use { os ->
+                    os.write(jsonBody.toByteArray(Charsets.UTF_8))
+                }
+
+                val code = connection.responseCode
+                if (code == HttpURLConnection.HTTP_OK) {
+                    val file = File(context.cacheDir, "tts_output.wav")
+                    connection.inputStream.use { input ->
+                        FileOutputStream(file).use { output ->
+                            input.copyTo(output)
+                        }
+                    }
+                    withContext(Dispatchers.Main) {
+                        player?.release()
+                        currentUri = file.absolutePath
+                        player = MediaPlayer().apply {
+                            setDataSource(file.absolutePath)
+                            prepare()
+                            dur = duration.coerceAtLeast(1)
+                        }
+                        pos = 0
+                        playing = false
+                        ttsMessage = "✅ صدا ساخته شد! دکمه پخش رو بزن "
+                    }
+                } else {
+                    val err = connection.errorStream?.bufferedReader()?.readText() ?: "بدون پیام"
+                    withContext(Dispatchers.Main) { ttsMessage = "❌ خطا $code: $err" }
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { ttsMessage = "❌ خطا: ${e.message}" }
+            } finally {
+                withContext(Dispatchers.Main) { isGenerating = false }
+            }
+        }
+    }
+
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri: Uri? ->
         if (uri != null) {
             player?.release()
@@ -82,6 +153,7 @@ fun PlayerScreen() {
             playing = false
         }
     }
+
     val setSpeed: (Float) -> Unit = { s ->
         speed = s
         val p = player
@@ -91,6 +163,7 @@ fun PlayerScreen() {
             if (!wasPlaying) p.pause()
         }
     }
+
     val skip: (Int) -> Unit = { ms ->
         val p = player
         if (p != null) {
@@ -99,17 +172,20 @@ fun PlayerScreen() {
             pos = target
         }
     }
+
     val transcript = remember {
         val f = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "OpenAudioBookify_Transcript.txt")
         if (f.exists()) f.readText() else ""
     }
     val sections = remember(transcript) { transcript.split("【بخش ") }
+
     LaunchedEffect(playing) {
         while (playing) {
             pos = player?.currentPosition ?: 0
             delay(500)
         }
     }
+
     LaunchedEffect(sleepLeft) {
         if (sleepLeft > 0) {
             delay(60000L)
@@ -123,17 +199,20 @@ fun PlayerScreen() {
             }
         }
     }
+
     DisposableEffect(Unit) {
         onDispose {
             savePos()
             player?.release()
         }
     }
+
     val currentIdx = ((pos.toFloat() / dur) * sections.size).toInt().coerceIn(0, (sections.size - 1).coerceAtLeast(0))
     val listState = rememberLazyListState()
     LaunchedEffect(currentIdx) {
         if (sections.size > 1) listState.animateScrollToItem(currentIdx)
     }
+
     val jump: (Int) -> Unit = { i ->
         val p = player
         if (p != null && sections.size > 0) {
@@ -142,10 +221,39 @@ fun PlayerScreen() {
             pos = target
         }
     }
+
     Box(Modifier.fillMaxSize().background(Color(0xFF121212))) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
             Text("🎧 پخش‌کننده کتاب صوتی", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
+            
+            // بخش جدید: ورودی متن و دکمه ساخت صدا
+            OutlinedTextField(
+                value = inputText,
+                onValueChange = { inputText = it },
+                label = { Text("متن رو اینجا بنویس") },
+                modifier = Modifier.fillMaxWidth().height(100.dp),
+                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
+                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
+                    focusedBorderColor = Color(0xFFBB86FC),
+                    unfocusedBorderColor = Color.Gray
+                )
+            )
+            Spacer(Modifier.height(8.dp))
+            Button(
+                onClick = generateTTS,
+                enabled = !isGenerating && inputText.isNotBlank(),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(if (isGenerating) " در حال ساخت..." else " ساخت صدا از متن")
+            }
+            if (ttsMessage.isNotEmpty()) {
+                Text(ttsMessage, color = if (ttsMessage.contains("✅")) Color(0xFF7CFC9A) else Color(0xFFFF6B6B), fontSize = 14.sp)
+            }
+            Spacer(Modifier.height(12.dp))
+            
+            // بخش قدیمی: انتخاب فایل صوتی
+            Text("یا فایل صوتی انتخاب کن:", color = Color(0xFFBB86FC))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("انتخاب کتاب") }
                 Button(onClick = { skip(-15000) }) { Text("⏪ ۵") }
