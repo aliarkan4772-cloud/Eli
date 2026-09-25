@@ -86,10 +86,9 @@ fun PlayerScreen() {
     val generateTTS: () -> Unit = {
         if (inputText.isBlank()) return
         isGenerating = true
-        ttsMessage = "⏳ در حال ساخت صدا (ممکنه ۱-۲ دقیقه طول بکشه)..."
+        ttsMessage = "generating..."
         scope.launch(Dispatchers.IO) {
             try {
-                // ️ کلید hf_ خودت رو اینجا بذار
                 val hfToken = "hf_YOUR_TOKEN_HERE"
                 val modelId = "mehdi-hf/pocket-tts-farsi-v2"
                 val url = URL("https://api-inference.huggingface.co/models/$modelId")
@@ -101,7 +100,8 @@ fun PlayerScreen() {
                 connection.setRequestProperty("Authorization", "Bearer $hfToken")
                 connection.setRequestProperty("Content-Type", "application/json")
 
-                val jsonBody = """{"inputs": "${inputText.replace("\"", "\\\"")}"}"""
+                val safeText = inputText.replace("\\", "\\\\").replace("\"", "\\\"")
+                val jsonBody = "{\"inputs\": \"$safeText\"}"
                 connection.outputStream.use { os ->
                     os.write(jsonBody.toByteArray(Charsets.UTF_8))
                 }
@@ -124,14 +124,14 @@ fun PlayerScreen() {
                         }
                         pos = 0
                         playing = false
-                        ttsMessage = "✅ صدا ساخته شد! دکمه پخش رو بزن "
+                        ttsMessage = "sound ready!"
                     }
                 } else {
-                    val err = connection.errorStream?.bufferedReader()?.readText() ?: "بدون پیام"
-                    withContext(Dispatchers.Main) { ttsMessage = "❌ خطا $code: $err" }
+                    val err = connection.errorStream?.bufferedReader()?.readText() ?: "no msg"
+                    withContext(Dispatchers.Main) { ttsMessage = "error $code: $err" }
                 }
             } catch (e: Exception) {
-                withContext(Dispatchers.Main) { ttsMessage = "❌ خطا: ${e.message}" }
+                withContext(Dispatchers.Main) { ttsMessage = "error: ${e.message}" }
             } finally {
                 withContext(Dispatchers.Main) { isGenerating = false }
             }
@@ -177,7 +177,7 @@ fun PlayerScreen() {
         val f = File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS), "OpenAudioBookify_Transcript.txt")
         if (f.exists()) f.readText() else ""
     }
-    val sections = remember(transcript) { transcript.split("【بخش ") }
+    val sections = remember(transcript) { listOf(transcript) }
 
     LaunchedEffect(playing) {
         while (playing) {
@@ -207,57 +207,38 @@ fun PlayerScreen() {
         }
     }
 
-    val currentIdx = ((pos.toFloat() / dur) * sections.size).toInt().coerceIn(0, (sections.size - 1).coerceAtLeast(0))
+    val currentIdx = 0
     val listState = rememberLazyListState()
-    LaunchedEffect(currentIdx) {
-        if (sections.size > 1) listState.animateScrollToItem(currentIdx)
-    }
-
-    val jump: (Int) -> Unit = { i ->
-        val p = player
-        if (p != null && sections.size > 0) {
-            val target = (i.toFloat() / sections.size * p.duration).toInt().coerceIn(0, p.duration.coerceAtLeast(0))
-            p.seekTo(target)
-            pos = target
-        }
-    }
 
     Box(Modifier.fillMaxSize().background(Color(0xFF121212))) {
         Column(Modifier.fillMaxSize().padding(16.dp)) {
-            Text("🎧 پخش‌کننده کتاب صوتی", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+            Text("OpenAudioBookify", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
             Spacer(Modifier.height(6.dp))
-            
-            // بخش جدید: ورودی متن و دکمه ساخت صدا
+
             OutlinedTextField(
                 value = inputText,
                 onValueChange = { inputText = it },
-                label = { Text("متن رو اینجا بنویس") },
-                modifier = Modifier.fillMaxWidth().height(100.dp),
-                textStyle = androidx.compose.ui.text.TextStyle(color = Color.White),
-                colors = androidx.compose.material3.OutlinedTextFieldDefaults.colors(
-                    focusedBorderColor = Color(0xFFBB86FC),
-                    unfocusedBorderColor = Color.Gray
-                )
+                label = { Text("write text here") },
+                modifier = Modifier.fillMaxWidth().height(100.dp)
             )
             Spacer(Modifier.height(8.dp))
             Button(
-                onClick = generateTTS,
+                onClick = { generateTTS() },
                 enabled = !isGenerating && inputText.isNotBlank(),
                 modifier = Modifier.fillMaxWidth()
             ) {
-                Text(if (isGenerating) " در حال ساخت..." else " ساخت صدا از متن")
+                Text(if (isGenerating) "generating..." else "Make Sound")
             }
             if (ttsMessage.isNotEmpty()) {
-                Text(ttsMessage, color = if (ttsMessage.contains("✅")) Color(0xFF7CFC9A) else Color(0xFFFF6B6B), fontSize = 14.sp)
+                Text(ttsMessage, color = Color(0xFFBB86FC), fontSize = 14.sp)
             }
             Spacer(Modifier.height(12.dp))
-            
-            // بخش قدیمی: انتخاب فایل صوتی
-            Text("یا فایل صوتی انتخاب کن:", color = Color(0xFFBB86FC))
+
+            Text("or pick an audio file:", color = Color(0xFFBB86FC))
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("انتخاب کتاب") }
-                Button(onClick = { skip(-15000) }) { Text("⏪ ۵") }
-                Button(onClick = { skip(15000) }) { Text("۱۵ ⏩") }
+                Button(onClick = { picker.launch(arrayOf("audio/*")) }) { Text("Pick") }
+                Button(onClick = { skip(-15000) }) { Text("-15") }
+                Button(onClick = { skip(15000) }) { Text("+15") }
             }
             Spacer(Modifier.height(6.dp))
             Slider(value = pos.toFloat().coerceIn(0f, dur.toFloat()), onValueChange = { v -> player?.seekTo(v.toInt()); pos = v.toInt() }, valueRange = 0f..dur.toFloat())
@@ -266,30 +247,26 @@ fun PlayerScreen() {
                     val p = player ?: return@Button
                     if (playing) { p.pause(); savePos() } else { p.start() }
                     playing = !playing
-                }) { Text(if (playing) "⏸ توقف" else "▶ پخش", fontSize = 18.sp) }
+                }) { Text(if (playing) "Pause" else "Play", fontSize = 18.sp) }
             }
             Spacer(Modifier.height(6.dp))
-            Text("سرعت پخش: " + speed.toString() + "x", color = Color(0xFFBB86FC))
+            Text("speed: $speed", color = Color(0xFFBB86FC))
             Slider(value = speed, onValueChange = { setSpeed(it) }, valueRange = 0.5f..2f)
             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Button(onClick = { sleepLeft = 15 }) { Text("خواب ۱۵") }
-                Button(onClick = { sleepLeft = 30 }) { Text("۳۰") }
-                Button(onClick = { sleepLeft = 60 }) { Text("۶۰") }
-                Button(onClick = { sleepLeft = 0 }) { Text("خاموش") }
+                Button(onClick = { sleepLeft = 15 }) { Text("15m") }
+                Button(onClick = { sleepLeft = 30 }) { Text("30m") }
+                Button(onClick = { sleepLeft = 60 }) { Text("60m") }
+                Button(onClick = { sleepLeft = 0 }) { Text("off") }
             }
-            if (sleepLeft > 0) Text("⏰ تایمر خواب: " + sleepLeft + " دقیقه", color = Color(0xFF7CFC9A))
+            if (sleepLeft > 0) Text("sleep: $sleepLeft min", color = Color(0xFF7CFC9A))
             Spacer(Modifier.height(6.dp))
-            Text("متن هم‌زمان (برای پرش، روی بخش بزن):", color = Color.White, fontWeight = FontWeight.Bold)
             LazyColumn(state = listState, modifier = Modifier.fillMaxWidth().weight(1f)) {
                 items(sections.size) { i ->
-                    val body = sections[i]
-                    val label = if (i == 0) "" else "【بخش " + i + "】\n"
                     Text(
-                        label + body,
-                        color = if (i == currentIdx) Color(0xFF7CFC9A) else Color.LightGray,
-                        fontSize = if (i == currentIdx) 17.sp else 15.sp,
-                        fontWeight = if (i == currentIdx) FontWeight.Bold else FontWeight.Normal,
-                        modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth().clickable { jump(i) }
+                        sections[i],
+                        color = Color.LightGray,
+                        fontSize = 15.sp,
+                        modifier = Modifier.padding(vertical = 6.dp).fillMaxWidth()
                     )
                 }
             }
