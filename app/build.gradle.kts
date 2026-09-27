@@ -83,6 +83,7 @@ dependencies {
     implementation(libs.androidx.media3.transformer)
     implementation(libs.androidx.media3.common)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
+implementation("com.microsoft.onnxruntime:onnxruntime-android:1.23.2")
     implementation(libs.androidx.material3)
 
     testImplementation(libs.junit)
